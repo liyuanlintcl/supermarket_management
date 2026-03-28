@@ -1,0 +1,128 @@
+.App {
+  min-height: 100vh;
+  background-color: #f8f9fa;
+}
+
+/* 导航栏样式 */
+.navbar-brand {
+  font-size: 1.5rem;
+}
+
+/* 表格样式 */
+.table th {
+  font-weight: 600;
+  background-color: #343a40;
+  color: white;
+}
+
+.table td {
+  vertical-align: middle;
+}
+
+/* 卡片样式 */
+.card {
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  border: none;
+}
+
+.card-header {
+  font-weight: 600;
+}
+
+/* 统计卡片 */
+.card.border-primary {
+  border-left: 4px solid #0d6efd !important;
+}
+
+.card.border-info {
+  border-left: 4px solid #0dcaf0 !important;
+}
+
+.card.border-success {
+  border-left: 4px solid #198754 !important;
+}
+
+.card.border-warning {
+  border-left: 4px solid #ffc107 !important;
+}
+
+/* 表单样式 */
+.form-control:focus {
+  box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+}
+
+/* 按钮样式 */
+.btn {
+  font-weight: 500;
+}
+
+/* 徽章样式 */
+.badge {
+  font-size: 0.9em;
+  padding: 0.5em 0.75em;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .container-fluid {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+  
+  h2 {
+    font-size: 1.5rem;
+  }
+  
+  .card-body {
+    padding: 1rem;
+  }
+}
+
+/* 动画效果 */
+.alert {
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 扫码输入框高亮 */
+input[autoFocus] {
+  border-color: #0d6efd;
+  background-color: #f8f9ff;
+}
+
+/* 表格行悬停效果 */
+.table tbody tr:hover {
+  background-color: rgba(13, 110, 253, 0.05);
+}
+
+/* 利润显示 */
+.text-success {
+  color: #198754 !important;
+}
+
+/* 库存不足警告 */
+.badge.bg-danger {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 1;
+  }
+}
