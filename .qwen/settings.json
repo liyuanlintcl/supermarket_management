@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir *)",
+      "Bash(npm init *)",
+      "Bash(npm install *)",
+      "Bash(npx *)",
+      "Bash(create-react-app *)",
+      "Bash(npm start)",
+      "Bash(curl *)",
+      "Bash(ipconfig)",
+      "Bash(findstr *)",
+      "Bash(taskkill *)",
+      "Bash(ngrok *)",
+      "Bash(timeout *)",
+      "Bash(sleep *)",
+      "Bash(tasklist)",
+      "Bash(powershell *)",
+      "Bash(lt *)",
+      "Bash(git init)",
+      "Bash(git add *)"
+    ]
+  },
+  "$version": 3
+}
