@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Row, Col, Table, Badge, Form, Button, Alert } from 'react-bootstrap';
-import { statisticsAPI } from '../services/api';
+import { Card, Row, Col, Table, Badge, Form, Button, Alert, ListGroup } from 'react-bootstrap';
+import { statisticsAPI, nearExpiryAPI, shelfAPI } from '../services/api';
 
 interface Stats {
   stock: {
@@ -25,21 +25,47 @@ interface TopProduct {
   total_revenue: number;
 }
 
+interface NearExpiryProduct {
+  id: number;
+  product_name: string;
+  barcode: string;
+  quantity: number;
+  remaining_qty: number;
+  production_date: string;
+  shelf_life_days: number;
+  expiry_date: string;
+  days_until_expiry: number;
+}
+
+interface LowStockProduct {
+  id: number;
+  product_id: number;
+  name: string;
+  barcode: string;
+  quantity: number;
+  total_stock: number;
+  min_shelf_stock: number;
+}
+
 const Statistics: React.FC = () => {
   const [stats, setStats] = useState<Stats | null>(null);
   const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [alert, setAlert] = useState<{ type: string; message: string } | null>(null);
+  const [nearExpiryProducts, setNearExpiryProducts] = useState<NearExpiryProduct[]>([]);
+  const [lowStockProducts, setLowStockProducts] = useState<LowStockProduct[]>([]);
+  const [expiryDays, setExpiryDays] = useState('30');
 
   useEffect(() => {
-    // 设置默认日期范围为当月
     const today = new Date();
     const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
     setStartDate(firstDay.toISOString().split('T')[0]);
     setEndDate(today.toISOString().split('T')[0]);
-    
+
     loadData();
+    loadNearExpiryProducts();
+    loadLowStockProducts();
   }, []);
 
   const loadData = async (start?: string, end?: string) => {
@@ -47,12 +73,31 @@ const Statistics: React.FC = () => {
       const params = start && end ? { start_date: start, end_date: end } : {};
       const [statsRes, topRes] = await Promise.all([
         statisticsAPI.getStats(params),
-        statisticsAPI.getTopProducts(10),
+        statisticsAPI.getTopProducts(10, params),
       ]);
       setStats(statsRes.data);
       setTopProducts(topRes.data);
     } catch (error) {
       setAlert({ type: 'danger', message: '加载统计数据失败' });
+    }
+  };
+
+  const loadNearExpiryProducts = async (days?: number) => {
+    try {
+      const params = days ? { days } : {};
+      const response = await nearExpiryAPI.getNearExpiryProducts(days);
+      setNearExpiryProducts(response.data);
+    } catch (error) {
+      console.error('加载临期商品失败');
+    }
+  };
+
+  const loadLowStockProducts = async () => {
+    try {
+      const response = await shelfAPI.getLowStock();
+      setLowStockProducts(response.data);
+    } catch (error) {
+      console.error('加载库存预警失败');
     }
   };
 
@@ -68,6 +113,10 @@ const Statistics: React.FC = () => {
     setStartDate(firstDay.toISOString().split('T')[0]);
     setEndDate(today.toISOString().split('T')[0]);
     loadData();
+  };
+
+  const handleExpiryFilter = () => {
+    loadNearExpiryProducts(parseInt(expiryDays));
   };
 
   return (
@@ -156,8 +205,8 @@ const Statistics: React.FC = () => {
                 <div className="text-muted mb-2">利润</div>
                 <h3 className="text-warning">¥{stats.sales.total_profit.toFixed(2)}</h3>
                 <div className="small text-muted">
-                  利润率: {stats.sales.total_revenue > 0 
-                    ? ((stats.sales.total_profit / stats.sales.total_revenue) * 100).toFixed(1) 
+                  利润率：{stats.sales.total_revenue > 0
+                    ? ((stats.sales.total_profit / stats.sales.total_revenue) * 100).toFixed(1)
                     : 0}%
                 </div>
               </Card.Body>
@@ -167,8 +216,122 @@ const Statistics: React.FC = () => {
       )}
 
       <Row>
-        {/* 热销商品排行 */}
+        {/* 临期商品预警 */}
         <Col md={6}>
+          <Card className="mb-4">
+            <Card.Header className="bg-danger text-white">
+              <strong>⚠️ 临期商品预警</strong>
+            </Card.Header>
+            <Card.Body>
+              <Row className="mb-3 align-items-end">
+                <Col md={6}>
+                  <Form.Group>
+                    <Form.Label>临期天数阈值</Form.Label>
+                    <Form.Control
+                      type="number"
+                      value={expiryDays}
+                      onChange={(e) => setExpiryDays(e.target.value)}
+                    />
+                    <Form.Text className="text-muted">
+                      显示多少天内到期的商品
+                    </Form.Text>
+                  </Form.Group>
+                </Col>
+                <Col md={6}>
+                  <Button variant="danger" onClick={handleExpiryFilter}>
+                    查询
+                  </Button>
+                </Col>
+              </Row>
+
+              {nearExpiryProducts.length === 0 ? (
+                <Alert variant="success">
+                  <strong>✓ 暂无临期商品</strong>
+                  <div className="small">所有商品都在安全期内</div>
+                </Alert>
+              ) : (
+                <ListGroup variant="flush">
+                  {nearExpiryProducts.map((product) => (
+                    <ListGroup.Item
+                      key={product.id}
+                      className={product.days_until_expiry <= 7 ? 'bg-danger text-white' : ''}
+                    >
+                      <div className="d-flex justify-content-between align-items-center">
+                        <div>
+                          <strong>{product.product_name}</strong>
+                          <div className="small text-muted">
+                            批次：{new Date(product.production_date).toLocaleDateString()} 生产
+                          </div>
+                          <div className="small">
+                            保质期：{product.shelf_life_days}天 | 到期：{new Date(product.expiry_date).toLocaleDateString()}
+                          </div>
+                        </div>
+                        <div className="text-end">
+                          <Badge bg={product.days_until_expiry <= 7 ? 'warning' : 'info'} className="mb-1">
+                            {product.days_until_expiry <= 0 ? '已过期' : `${product.days_until_expiry}天后到期`}
+                          </Badge>
+                          <div className="small">
+                            剩余：{product.remaining_qty}/{product.quantity}
+                          </div>
+                        </div>
+                      </div>
+                    </ListGroup.Item>
+                  ))}
+                </ListGroup>
+              )}
+            </Card.Body>
+          </Card>
+
+          {/* 库存预警 */}
+          <Card>
+            <Card.Header className="bg-warning text-dark">
+              <strong>📦 库存预警</strong>
+              {lowStockProducts.length > 0 && (
+                <Badge bg="danger" className="ms-2">{lowStockProducts.length}</Badge>
+              )}
+            </Card.Header>
+            <Card.Body>
+              {lowStockProducts.length === 0 ? (
+                <Alert variant="success">
+                  <strong>✓ 库存充足</strong>
+                  <div className="small">所有商品货架库存均高于预警值</div>
+                </Alert>
+              ) : (
+                <ListGroup variant="flush">
+                  {lowStockProducts.map((product) => (
+                    <ListGroup.Item key={product.id}>
+                      <div className="d-flex justify-content-between align-items-center">
+                        <div>
+                          <strong>{product.name}</strong>
+                          <div className="small text-muted">
+                            条形码: {product.barcode}
+                          </div>
+                          <div className="small">
+                            最低库存: {product.min_shelf_stock} 件
+                          </div>
+                        </div>
+                        <div className="text-end">
+                          <Badge bg="danger" className="mb-1">
+                            缺货
+                          </Badge>
+                          <div className="small">
+                            货架: <strong className="text-danger">{product.quantity}</strong> 件
+                          </div>
+                          <div className="small text-muted">
+                            仓库: {product.total_stock} 件
+                          </div>
+                        </div>
+                      </div>
+                    </ListGroup.Item>
+                  ))}
+                </ListGroup>
+              )}
+            </Card.Body>
+          </Card>
+        </Col>
+
+        <Col md={6}>
+          {/* 热销商品排行 */}
           <Card className="mb-4">
             <Card.Header className="bg-primary text-white">
               <strong>🏆 热销商品排行 TOP10</strong>
@@ -206,29 +369,6 @@ const Statistics: React.FC = () => {
               )}
             </Card.Body>
           </Card>
-        </Col>
-
-        {/* 库存预警 */}
-        <Col md={6}>
-          <Card className="mb-4">
-            <Card.Header className="bg-danger text-white">
-              <strong>⚠️ 库存预警</strong>
-            </Card.Header>
-            <Card.Body>
-              <Alert variant="info">
-                <strong>库存状态说明：</strong>
-                <ul className="mt-2">
-                  <li><Badge bg="danger">红色</Badge> 库存不足 10 件，需要补货</li>
-                  <li><Badge bg="warning">黄色</Badge> 库存不足 50 件，注意监控</li>
-                  <li><Badge bg="success">绿色</Badge> 库存充足</li>
-                </ul>
-              </Alert>
-              <div className="text-center text-muted py-4">
-                <p>请在"商品管理"页面查看详细库存信息</p>
-                <p>系统会自动标记库存不足的商品</p>
-              </div>
-            </Card.Body>
-          </Card>
 
           {/* 经营概况 */}
           {stats && (
@@ -256,16 +396,16 @@ const Statistics: React.FC = () => {
                     <tr>
                       <td>平均利润率:</td>
                       <td className="text-end">
-                        {stats.sales.total_revenue > 0 
-                          ? ((stats.sales.total_profit / stats.sales.total_revenue) * 100).toFixed(1) 
+                        {stats.sales.total_revenue > 0
+                          ? ((stats.sales.total_profit / stats.sales.total_revenue) * 100).toFixed(1)
                           : 0}%
                       </td>
                     </tr>
                     <tr>
                       <td>库存周转率:</td>
                       <td className="text-end">
-                        {stats.stock.total_stock > 0 
-                          ? (stats.sales.total_sold / stats.stock.total_stock).toFixed(2) 
+                        {stats.stock.total_stock > 0
+                          ? (stats.sales.total_sold / stats.stock.total_stock).toFixed(2)
                           : 0}
                       </td>
                     </tr>

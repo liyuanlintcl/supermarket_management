@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Card, Form, Button, Alert, Table, Badge, Row, Col } from 'react-bootstrap';
+import { Card, Form, Button, Alert, Table, Badge, Row, Col, InputGroup } from 'react-bootstrap';
 import { productAPI, stockInAPI } from '../services/api';
-import BarcodeScanner from './BarcodeScanner';
 
 interface Product {
   id: number;
@@ -10,6 +9,7 @@ interface Product {
   purchase_price: number;
   sale_price: number;
   stock: number;
+  shelf_life_days: number;
 }
 
 interface StockInRecord {
@@ -26,16 +26,16 @@ const StockIn: React.FC = () => {
   const [barcode, setBarcode] = useState('');
   const [quantity, setQuantity] = useState('');
   const [purchasePrice, setPurchasePrice] = useState('');
+  const [productionDate, setProductionDate] = useState('');
+  const [shelfLifeDays, setShelfLifeDays] = useState('');
   const [product, setProduct] = useState<Product | null>(null);
   const [alert, setAlert] = useState<{ type: string; message: string } | null>(null);
   const [records, setRecords] = useState<StockInRecord[]>([]);
   const [loading, setLoading] = useState(false);
-  const [showScanner, setShowScanner] = useState(false);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadRecentRecords();
-    // 自动聚焦到条形码输入框
     barcodeInputRef.current?.focus();
   }, []);
 
@@ -57,9 +57,14 @@ const StockIn: React.FC = () => {
     if (e.key === 'Enter') {
       try {
         const response = await productAPI.getByBarcode(barcode);
-        setProduct(response.data);
-        setPurchasePrice(response.data.purchase_price.toString());
-        showAlert('success', `找到商品: ${response.data.name}`);
+        const product = response.data;
+        setProduct(product);
+        setPurchasePrice(product.purchase_price.toString());
+        // 自动填充商品的默认保质期
+        if (product.shelf_life_days && product.shelf_life_days > 0) {
+          setShelfLifeDays(product.shelf_life_days.toString());
+        }
+        showAlert('success', `找到商品：${product.name}`);
       } catch (error: any) {
         if (error.response?.status === 404) {
           showAlert('warning', '商品不存在，请先添加商品');
@@ -88,25 +93,38 @@ const StockIn: React.FC = () => {
       return;
     }
 
+    // 验证生产日期必填
+    if (!productionDate) {
+      showAlert('warning', '请选择生产日期');
+      return;
+    }
+
+    // 使用商品默认的保质期（从商品信息中获取）
+    const defaultShelfLifeDays = product?.shelf_life_days || 365;
+
     setLoading(true);
     try {
       await stockInAPI.create({
         barcode,
         quantity: parseInt(quantity),
         purchase_price: parseFloat(purchasePrice),
+        production_date: productionDate,
+        shelf_life_days: defaultShelfLifeDays,
       });
 
       showAlert('success', `入库成功！${product.name} 入库 ${quantity} 件`);
-      
+
       // 重置表单
       setBarcode('');
       setQuantity('');
       setPurchasePrice('');
+      setProductionDate('');
+      setShelfLifeDays('');
       setProduct(null);
-      
+
       // 刷新记录
       loadRecentRecords();
-      
+
       // 重新聚焦
       barcodeInputRef.current?.focus();
     } catch (error: any) {
@@ -120,17 +138,11 @@ const StockIn: React.FC = () => {
     setBarcode('');
     setQuantity('');
     setPurchasePrice('');
+    setProductionDate('');
+    setShelfLifeDays('');
     setProduct(null);
     setAlert(null);
     barcodeInputRef.current?.focus();
-  };
-
-  const handleScan = (scannedBarcode: string) => {
-    setBarcode(scannedBarcode);
-    // 自动查询商品
-    setTimeout(() => {
-      handleBarcodeScan({ key: 'Enter' } as React.KeyboardEvent<HTMLInputElement>);
-    }, 100);
   };
 
   return (
@@ -153,26 +165,19 @@ const StockIn: React.FC = () => {
               <Form onSubmit={handleSubmit}>
                 <Form.Group className="mb-3">
                   <Form.Label>条形码</Form.Label>
-                  <div className="d-flex gap-2">
+                  <InputGroup>
                     <Form.Control
                       ref={barcodeInputRef}
                       type="text"
-                      placeholder="请扫描或输入条形码，按回车确认"
+                      placeholder="请使用扫描枪扫描条形码，或手动输入后按回车"
                       value={barcode}
                       onChange={(e) => setBarcode(e.target.value)}
                       onKeyPress={handleBarcodeScan}
                       autoFocus
                     />
-                    <Button 
-                      variant="outline-primary" 
-                      onClick={() => setShowScanner(true)}
-                      title="使用手机摄像头扫码"
-                    >
-                      📷
-                    </Button>
-                  </div>
+                  </InputGroup>
                   <Form.Text className="text-muted">
-                    提示：可以使用扫码枪或点击相机按钮使用手机摄像头
+                    提示：使用扫描枪扫描条形码，或手动输入后按回车键
                   </Form.Text>
                 </Form.Group>
 
@@ -180,8 +185,8 @@ const StockIn: React.FC = () => {
                   <>
                     <Alert variant="info">
                       <strong>商品信息</strong><br />
-                      名称: {product.name}<br />
-                      当前库存: <Badge bg="primary">{product.stock}</Badge>
+                      名称：{product.name}<br />
+                      当前库存：<Badge bg="primary">{product.stock}</Badge>
                     </Alert>
 
                     <Form.Group className="mb-3">
@@ -209,16 +214,42 @@ const StockIn: React.FC = () => {
                       />
                     </Form.Group>
 
+                    <Form.Group className="mb-3">
+                      <Form.Label>生产日期 <span className="text-danger">*</span></Form.Label>
+                      <Form.Control
+                        type="date"
+                        value={productionDate}
+                        onChange={(e) => setProductionDate(e.target.value)}
+                        required
+                      />
+                      <Form.Text className="text-muted">
+                        必填：选择商品的生产日期
+                      </Form.Text>
+                    </Form.Group>
+
+                    <Form.Group className="mb-3">
+                      <Form.Label>保质期天数</Form.Label>
+                      <Form.Control
+                        type="number"
+                        value={product.shelf_life_days || 365}
+                        disabled
+                        readOnly
+                      />
+                      <Form.Text className="text-muted">
+                        自动使用商品默认保质期 {product.shelf_life_days || 365} 天（在商品管理中修改）
+                      </Form.Text>
+                    </Form.Group>
+
                     {quantity && purchasePrice && (
                       <Alert variant="secondary">
-                        预计成本: ¥{(parseInt(quantity) * parseFloat(purchasePrice)).toFixed(2)}
+                        预计成本：¥{(parseInt(quantity) * parseFloat(purchasePrice)).toFixed(2)}
                       </Alert>
                     )}
 
                     <div className="d-flex gap-2">
-                      <Button 
-                        variant="success" 
-                        type="submit" 
+                      <Button
+                        variant="success"
+                        type="submit"
                         disabled={loading}
                         className="flex-fill"
                       >
@@ -274,12 +305,6 @@ const StockIn: React.FC = () => {
           </Card>
         </Col>
       </Row>
-
-      <BarcodeScanner
-        show={showScanner}
-        onHide={() => setShowScanner(false)}
-        onScan={handleScan}
-      />
     </div>
   );
 };

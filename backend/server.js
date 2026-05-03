@@ -1,11 +1,21 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const db = require('./database');
 
-const app = express();
-const PORT = 3001;
+// 导入路由模块
+const productsRouter = require('./routes/products');
+const stockInRouter = require('./routes/stockIn');
+const stockOutRouter = require('./routes/stockOut');
+const batchesRouter = require('./routes/batches');
+const statisticsRouter = require('./routes/statistics');
+const shelfRouter = require('./routes/shelf');
+const paymentRouter = require('./routes/payment');
 
-// 允许所有来源访问（包括手机）
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+// 中间件配置
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
@@ -13,337 +23,88 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// ========== 商品管理 API ==========
+// API 路由挂载
+app.use('/api/products', productsRouter);
+app.use('/api/stock-in', stockInRouter);
+app.use('/api/stock-out', stockOutRouter);
+app.use('/api/batches', batchesRouter);
+app.use('/api/statistics', statisticsRouter);
+app.use('/api/shelf', shelfRouter);
+app.use('/api/payment', paymentRouter);
 
-// 获取所有商品
-app.get('/api/products', (req, res) => {
+// 临期商品 API 别名（兼容前端旧路径）
+app.get('/api/near-expiry-products', (req, res) => {
+  const { days = 30 } = req.query;
+  const thresholdDays = parseInt(days);
+
+  // 查询所有有货架库存的商品批次
   db.all(
-    `SELECT * FROM products ORDER BY updated_at DESC`,
+    `SELECT b.*, p.name, p.barcode, s.quantity as shelf_quantity
+     FROM batch b
+     JOIN products p ON b.product_id = p.id
+     LEFT JOIN shelf s ON b.product_id = s.product_id
+     WHERE s.quantity > 0 OR b.remaining_qty > 0
+     ORDER BY b.production_date ASC`,
     [],
     (err, rows) => {
       if (err) {
         res.status(500).json({ error: err.message });
         return;
       }
-      res.json(rows);
-    }
-  );
-});
 
-// 根据条形码获取商品
-app.get('/api/products/barcode/:barcode', (req, res) => {
-  db.get(
-    `SELECT * FROM products WHERE barcode = ?`,
-    [req.params.barcode],
-    (err, row) => {
-      if (err) {
-        res.status(500).json({ error: err.message });
-        return;
-      }
-      if (!row) {
-        res.status(404).json({ error: '商品不存在' });
-        return;
-      }
-      res.json(row);
-    }
-  );
-});
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); // 重置时间为00:00:00
 
-// 添加新商品
-app.post('/api/products', (req, res) => {
-  const { barcode, name, purchase_price, sale_price, stock } = req.body;
-  
-  db.run(
-    `INSERT INTO products (barcode, name, purchase_price, sale_price, stock) 
-     VALUES (?, ?, ?, ?, ?)`,
-    [barcode, name, purchase_price, sale_price, stock || 0],
-    function(err) {
-      if (err) {
-        if (err.message.includes('UNIQUE constraint failed')) {
-          res.status(400).json({ error: '条形码已存在' });
-          return;
-        }
-        res.status(500).json({ error: err.message });
-        return;
-      }
-      res.json({ 
-        id: this.lastID, 
-        message: '商品添加成功' 
-      });
-    }
-  );
-});
+      const nearExpiryProducts = [];
+      const processedProducts = new Set();
 
-// 更新商品
-app.put('/api/products/:id', (req, res) => {
-  const { name, purchase_price, sale_price } = req.body;
-  
-  db.run(
-    `UPDATE products 
-     SET name = ?, purchase_price = ?, sale_price = ?, updated_at = CURRENT_TIMESTAMP 
-     WHERE id = ?`,
-    [name, purchase_price, sale_price, req.params.id],
-    function(err) {
-      if (err) {
-        res.status(500).json({ error: err.message });
-        return;
-      }
-      if (this.changes === 0) {
-        res.status(404).json({ error: '商品不存在' });
-        return;
-      }
-      res.json({ message: '商品更新成功' });
-    }
-  );
-});
+      rows.forEach(batch => {
+        // 避免同一商品重复显示
+        if (processedProducts.has(batch.product_id)) return;
 
-// 删除商品
-app.delete('/api/products/:id', (req, res) => {
-  db.run(
-    `DELETE FROM products WHERE id = ?`,
-    [req.params.id],
-    function(err) {
-      if (err) {
-        res.status(500).json({ error: err.message });
-        return;
-      }
-      if (this.changes === 0) {
-        res.status(404).json({ error: '商品不存在' });
-        return;
-      }
-      res.json({ message: '商品删除成功' });
-    }
-  );
-});
+        const expDate = new Date(batch.production_date);
+        expDate.setDate(expDate.getDate() + batch.shelf_life_days);
+        expDate.setHours(0, 0, 0, 0); // 重置时间为00:00:00
 
-// ========== 入库管理 API ==========
+        const daysUntilExpiry = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
 
-// 商品入库
-app.post('/api/stock-in', (req, res) => {
-  const { barcode, quantity, purchase_price } = req.body;
-  
-  db.get(`SELECT * FROM products WHERE barcode = ?`, [barcode], (err, product) => {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
-    }
-    if (!product) {
-      res.status(404).json({ error: '商品不存在，请先添加商品' });
-      return;
-    }
+        if (daysUntilExpiry >= 0 && daysUntilExpiry <= thresholdDays) {
+          processedProducts.add(batch.product_id);
+          // 使用货架库存(如果有)或批次剩余库存
+          const availableQty = batch.shelf_quantity !== null && batch.shelf_quantity !== undefined
+            ? batch.shelf_quantity
+            : batch.remaining_qty;
 
-    const totalCost = quantity * purchase_price;
-    const newStock = product.stock + quantity;
-
-    db.serialize(() => {
-      // 添加入库记录
-      db.run(
-        `INSERT INTO stock_in (product_id, quantity, purchase_price, total_cost) 
-         VALUES (?, ?, ?, ?)`,
-        [product.id, quantity, purchase_price, totalCost]
-      );
-
-      // 更新商品库存
-      db.run(
-        `UPDATE products SET stock = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-        [newStock, product.id],
-        function(err) {
-          if (err) {
-            res.status(500).json({ error: err.message });
-            return;
-          }
-          res.json({ 
-            message: '入库成功', 
-            product: { ...product, stock: newStock }
+          nearExpiryProducts.push({
+            id: batch.id,
+            product_id: batch.product_id,
+            product_name: batch.name,
+            barcode: batch.barcode,
+            name: batch.name,
+            quantity: batch.quantity,
+            remaining_qty: availableQty,
+            production_date: batch.production_date,
+            shelf_life_days: batch.shelf_life_days,
+            expiry_date: expDate.toISOString().split('T')[0],
+            days_until_expiry: daysUntilExpiry
           });
         }
-      );
-    });
-  });
-});
-
-// 获取入库记录
-app.get('/api/stock-in', (req, res) => {
-  const { start_date, end_date } = req.query;
-  let query = `
-    SELECT si.*, p.name, p.barcode 
-    FROM stock_in si 
-    JOIN products p ON si.product_id = p.id 
-  `;
-  let params = [];
-
-  if (start_date && end_date) {
-    query += ` WHERE si.created_at BETWEEN ? AND ?`;
-    params = [start_date, end_date];
-  }
-  
-  query += ` ORDER BY si.created_at DESC`;
-
-  db.all(query, params, (err, rows) => {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
-    }
-    res.json(rows);
-  });
-});
-
-// ========== 出库/销售 API ==========
-
-// 商品出库/销售
-app.post('/api/stock-out', (req, res) => {
-  const { barcode, quantity } = req.body;
-  
-  db.get(`SELECT * FROM products WHERE barcode = ?`, [barcode], (err, product) => {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
-    }
-    if (!product) {
-      res.status(404).json({ error: '商品不存在' });
-      return;
-    }
-    if (product.stock < quantity) {
-      res.status(400).json({ error: `库存不足，当前库存: ${product.stock}` });
-      return;
-    }
-
-    const totalRevenue = quantity * product.sale_price;
-    const totalCost = quantity * product.purchase_price;
-    const profit = totalRevenue - totalCost;
-    const newStock = product.stock - quantity;
-
-    db.serialize(() => {
-      // 添加出库记录
-      db.run(
-        `INSERT INTO stock_out (product_id, quantity, sale_price, total_revenue, profit) 
-         VALUES (?, ?, ?, ?, ?)`,
-        [product.id, quantity, product.sale_price, totalRevenue, profit]
-      );
-
-      // 更新商品库存
-      db.run(
-        `UPDATE products SET stock = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-        [newStock, product.id],
-        function(err) {
-          if (err) {
-            res.status(500).json({ error: err.message });
-            return;
-          }
-          res.json({ 
-            message: '出库成功', 
-            product: { ...product, stock: newStock },
-            revenue: totalRevenue,
-            profit: profit
-          });
-        }
-      );
-    });
-  });
-});
-
-// 获取出库/销售记录
-app.get('/api/stock-out', (req, res) => {
-  const { start_date, end_date } = req.query;
-  let query = `
-    SELECT so.*, p.name, p.barcode 
-    FROM stock_out so 
-    JOIN products p ON so.product_id = p.id 
-  `;
-  let params = [];
-
-  if (start_date && end_date) {
-    query += ` WHERE so.created_at BETWEEN ? AND ?`;
-    params = [start_date, end_date];
-  }
-  
-  query += ` ORDER BY so.created_at DESC`;
-
-  db.all(query, params, (err, rows) => {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
-    }
-    res.json(rows);
-  });
-});
-
-// ========== 统计 API ==========
-
-// 获取统计数据
-app.get('/api/statistics', (req, res) => {
-  const { start_date, end_date } = req.query;
-  
-  // 库存统计
-  db.get(`SELECT COUNT(*) as total_products, SUM(stock) as total_stock FROM products`, [], (err, stockStats) => {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
-    }
-
-    // 销售统计
-    let salesQuery = `SELECT COALESCE(SUM(quantity), 0) as total_sold, COALESCE(SUM(total_revenue), 0) as total_revenue, COALESCE(SUM(profit), 0) as total_profit FROM stock_out`;
-    let salesParams = [];
-    
-    if (start_date && end_date) {
-      salesQuery += ` WHERE created_at BETWEEN ? AND ?`;
-      salesParams = [start_date, end_date];
-    }
-
-    db.get(salesQuery, salesParams, (err, salesStats) => {
-      if (err) {
-        res.status(500).json({ error: err.message });
-        return;
-      }
-
-      // 入库统计
-      let purchaseQuery = `SELECT COALESCE(SUM(quantity), 0) as total_purchased, COALESCE(SUM(total_cost), 0) as total_cost FROM stock_in`;
-      let purchaseParams = [];
-      
-      if (start_date && end_date) {
-        purchaseQuery += ` WHERE created_at BETWEEN ? AND ?`;
-        purchaseParams = [start_date, end_date];
-      }
-
-      db.get(purchaseQuery, purchaseParams, (err, purchaseStats) => {
-        if (err) {
-          res.status(500).json({ error: err.message });
-          return;
-        }
-
-        res.json({
-          stock: stockStats,
-          sales: salesStats,
-          purchase: purchaseStats
-        });
       });
-    });
-  });
-});
 
-// 获取热销商品排行
-app.get('/api/top-products', (req, res) => {
-  const { limit = 10 } = req.query;
-  
-  db.all(
-    `SELECT p.name, p.barcode, SUM(so.quantity) as total_sold, SUM(so.total_revenue) as total_revenue
-     FROM stock_out so
-     JOIN products p ON so.product_id = p.id
-     GROUP BY so.product_id
-     ORDER BY total_sold DESC
-     LIMIT ?`,
-    [parseInt(limit)],
-    (err, rows) => {
-      if (err) {
-        res.status(500).json({ error: err.message });
-        return;
-      }
-      res.json(rows);
+      res.json(nearExpiryProducts);
     }
   );
+});
+
+// 健康检查端点
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // 启动服务器
 app.listen(PORT, () => {
   console.log(`服务器运行在 http://localhost:${PORT}`);
+  console.log(`环境: ${process.env.NODE_ENV || 'development'}`);
 });
+
+module.exports = app;

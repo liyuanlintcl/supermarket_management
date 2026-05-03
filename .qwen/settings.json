@@ -18,7 +18,21 @@
       "Bash(powershell *)",
       "Bash(lt *)",
       "Bash(git init)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(git rm *)",
+      "Bash(rm *)",
+      "Bash(rmdir *)",
+      "Bash(node *)",
+      "Bash(python *)",
+      "WebFetch(www.upcitemdb.com)",
+      "Bash(netstat *)",
+      "Bash(select-string *)",
+      "Bash(type *)",
+      "Bash(find *)",
+      "Bash(sqlite3 *)"
     ]
   },
   "$version": 3

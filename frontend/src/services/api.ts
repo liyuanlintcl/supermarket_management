@@ -1,10 +1,7 @@
 import axios from 'axios';
 
-// 自动检测服务器地址（支持本机和局域网访问）
 const getBaseUrl = () => {
   const hostname = window.location.hostname;
-  // 如果是localhost或127.0.0.1，使用localhost:3001
-  // 如果是局域网IP，使用当前IP:3001
   return `http://${hostname}:3001/api`;
 };
 
@@ -17,7 +14,7 @@ const api = axios.create({
   },
 });
 
-// 商品API
+// 商品 API
 export const productAPI = {
   getAll: () => api.get('/products'),
   getByBarcode: (barcode: string) => api.get(`/products/barcode/${barcode}`),
@@ -26,22 +23,42 @@ export const productAPI = {
   delete: (id: number) => api.delete(`/products/${id}`),
 };
 
-// 入库API
+// 入库 API
 export const stockInAPI = {
   create: (data: any) => api.post('/stock-in', data),
   getAll: (params?: any) => api.get('/stock-in', { params }),
 };
 
-// 出库API
+// 出库 API
 export const stockOutAPI = {
   create: (data: any) => api.post('/stock-out', data),
   getAll: (params?: any) => api.get('/stock-out', { params }),
 };
 
-// 统计API
+// 统计 API
 export const statisticsAPI = {
   getStats: (params?: any) => api.get('/statistics', { params }),
-  getTopProducts: (limit?: number) => api.get('/top-products', { params: { limit } }),
+  getTopProducts: (limit?: number, params?: any) => api.get('/statistics/top-products', { params: { limit, ...params } }),
+};
+
+// 批次 API
+export const batchAPI = {
+  getAll: (params?: any) => api.get('/batches', { params }),
+  delete: (id: number) => api.delete(`/batches/${id}`),
+};
+
+// 货架 API
+export const shelfAPI = {
+  getAll: () => api.get('/shelf'),
+  getBatches: (barcode: string) => api.get(`/shelf/batches/${barcode}`),
+  stock: (data: any) => api.post('/shelf/stock', data),
+  remove: (data: any) => api.post('/shelf/remove', data),
+  getLowStock: () => api.get('/shelf/low-stock'),
+};
+
+// 临期商品 API
+export const nearExpiryAPI = {
+  getNearExpiryProducts: (days?: number) => api.get('/near-expiry-products', { params: { days } }),
 };
 
 export default api;

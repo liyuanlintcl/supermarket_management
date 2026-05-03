@@ -5,6 +5,7 @@ import ProductManagement from './components/ProductManagement';
 import StockIn from './components/StockIn';
 import StockOut from './components/StockOut';
 import Statistics from './components/Statistics';
+import ShelfManagement from './components/ShelfManagement';
 import './App.css';
 
 function App() {
@@ -26,6 +27,9 @@ function App() {
               <Nav.Link active={activeTab === 'stockin'} onClick={() => setActiveTab('stockin')}>
                 📥 入库管理
               </Nav.Link>
+              <Nav.Link active={activeTab === 'shelf'} onClick={() => setActiveTab('shelf')}>
+                🛒 货架管理
+              </Nav.Link>
               <Nav.Link active={activeTab === 'stockout'} onClick={() => setActiveTab('stockout')}>
                 📤 销售出库
               </Nav.Link>
@@ -40,6 +44,7 @@ function App() {
       <Container fluid className="px-4">
         {activeTab === 'products' && <ProductManagement />}
         {activeTab === 'stockin' && <StockIn />}
+        {activeTab === 'shelf' && <ShelfManagement />}
         {activeTab === 'stockout' && <StockOut />}
         {activeTab === 'statistics' && <Statistics />}
       </Container>

@@ -1,0 +1,25 @@
+
+
+StatusCode        : 200
+StatusDescription : OK
+Content           : {"Code":1,"Msg":"Success","Data":{"PageIndex":1,"PageSize":30,"TotalCount":1,"TotalPa
+                    ges":1,"HasPreviousPage":false,"HasNextPage":false,"Items":[{"keyword":"Ω‡»·","branch
+                    _code":"4401    ","gtin":"069140...
+RawContent        : HTTP/1.1 200 OK
+                    Vary: Origin
+                    Access-Control-Allow-Origin: https://www.gds.org.cn
+                    X-Rate-Limit-Limit: 7d
+                    X-Rate-Limit-Remaining: 973
+                    X-Rate-Limit-Reset: 2026-04-06T00:00:00.0000000Z
+                    Content-Lengt...
+Forms             : 
+Headers           : {[Vary, Origin], [Access-Control-Allow-Origin, https://www.gds.org.cn], [X-Rate-Limit
+                    -Limit, 7d], [X-Rate-Limit-Remaining, 973]...}
+Images            : {}
+InputFields       : {}
+Links             : {}
+ParsedHtml        : 
+RawContentLength  : 1561
+
+
+
